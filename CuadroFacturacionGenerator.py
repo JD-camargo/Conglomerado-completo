@@ -121,18 +121,18 @@ class CuadroFacturacionGenerator:
         if not col_prof:
             raise KeyError("No se encontró la columna del profesional en el archivo.")
         lista_limpia = [str(x).strip() for x in lista_profesionales if str(x).strip()]
-        df_filtrado = df[df[col_prof].astype(str).isin(lista_limpia)]
+        df_filtrado = df[df[col_prof].astype(str).isin(lista_limpia)].reset_index(drop=True)
 
-        # Construir DataFrame de salida con columnas fijas (si no existen, crear vacías)
-        salida = pd.DataFrame(index=df_filtrado.index)
-        for final_col in self.columnas_finales:
-            # buscar la columna original correspondiente (usando synonyms si existen)
-            candidates = self.synonyms.get(final_col, [final_col])
-            encontrada = _find_col(candidates, df_filtrado.columns)
-            if encontrada:
-                salida[final_col] = df_filtrado[encontrada]
-            else:
-                salida[final_col] = ""  # columna vacía si no existe
+# Construir DataFrame de salida vacío con el mismo número de filas
+salida = pd.DataFrame(index=range(len(df_filtrado)))
+for final_col in self.columnas_finales:
+    candidates = self.synonyms.get(final_col, [final_col])
+    encontrada = _find_col(candidates, df_filtrado.columns)
+    if encontrada:
+        salida[final_col] = df_filtrado[encontrada].values
+    else:
+        salida[final_col] = ""  # columna vacía si no existe
+
 
         # Guardar
         salida.to_excel(output_path, sheet_name="FACTURACION", index=False)
