@@ -1,108 +1,49 @@
-# app.py
 import streamlit as st
-import tempfile
-import os
-import pandas as pd
 from CuadroFacturacionGenerator import CuadroFacturacionGenerator
+import os
+import zipfile
 
-st.set_page_config(page_title="Generador de Cuadro de Facturación - IPS", layout="centered")
-st.title("🧾 Generador de Cuadro de Facturación - IPS")
-st.markdown("Sube el Excel **CONGLOMERADO**, elige un profesional y descarga su cuadro o descarga el archivo con todas las profesionales.")
+st.set_page_config(page_title="Cuadro de Facturación", layout="wide")
 
-uploaded_file = st.file_uploader("📤 Cargar archivo Excel (.xlsx)", type=["xlsx"])
+st.title("📊 Generador de Cuadro de Facturación")
 
-if not uploaded_file:
-    st.info("Sube el archivo del conglomerado (formato .xlsx).")
-    st.stop()
+uploaded_file = st.file_uploader("Sube el archivo del conglomerado (.xlsx)", type=["xlsx"])
 
-# guardar temporalmente el excel subido
-with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-    tmp.write(uploaded_file.read())
-    temp_input_path = tmp.name
-
-generador = CuadroFacturacionGenerator()
-
-try:
-    # Listar profesionales detectados y mostrar preview
-    nombres, col_prof = generador.listar_profesionales(temp_input_path)
-    st.caption(f"Columna detectada para profesional: **{col_prof}**")
-
-    # Mostrar una vista previa de las primeras filas (detecta hoja CONGLOMERADO si existe)
-    xls = pd.ExcelFile(temp_input_path, engine="openpyxl")
-    sheet = "CONGLOMERADO" if "CONGLOMERADO" in xls.sheet_names else xls.sheet_names[0]
-    preview_df = pd.read_excel(xls, sheet_name=sheet, engine="openpyxl")
-    st.subheader("Vista previa (primeras 8 filas)")
-    st.dataframe(preview_df.head(8))
-
-    # Selección de profesional
-    nombre_seleccionado = st.selectbox("👤 Selecciona el profesional:", nombres)
-
-    c1, c2, c3 = st.columns([1,1,1])
-
-    # Descargar individual
-    if c1.button("📥 Descargar seleccionado"):
-        with st.spinner("Generando archivo individual..."):
-            temp_out = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{nombre_seleccionado.replace(' ', '_')}.xlsx")
-            temp_out_path = temp_out.name
-            temp_out.close()
-            generador.generar_filtrado(temp_input_path, temp_out_path, [nombre_seleccionado])
-            with open(temp_out_path, "rb") as f:
-                data = f.read()
-            os.remove(temp_out_path)
-        st.success(f"Archivo individual listo: {nombre_seleccionado}")
-        st.download_button(
-            label=f"📥 Descargar {nombre_seleccionado}",
-            data=data,
-            file_name=f"CUADRO_{nombre_seleccionado.replace(' ', '_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"download_individual_{nombre_seleccionado}"
-        )
-
-    # Descargar todos combinados (una hoja)
-    if c2.button("📥 Descargar TODOS (combinado)"):
-        with st.spinner("Generando archivo combinado con todos los profesionales..."):
-            temp_out_all = tempfile.NamedTemporaryFile(delete=False, suffix="_TODOS_COMBINADO.xlsx")
-            temp_out_all_path = temp_out_all.name
-            temp_out_all.close()
-            generador.generar_filtrado(temp_input_path, temp_out_all_path, nombres)
-            with open(temp_out_all_path, "rb") as f:
-                data_all = f.read()
-            os.remove(temp_out_all_path)
-        st.success("Archivo combinado listo")
-        st.download_button(
-            label="📥 Descargar CUADRO_TODOS.xlsx",
-            data=data_all,
-            file_name="CUADRO_TODOS.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_todos_combined"
-        )
-
-    # Descargar workbook con hoja por profesional
-    if c3.button("📥 Descargar TODOS (por hojas)"):
-        with st.spinner("Generando workbook por profesional (una hoja por terapeuta)..."):
-            temp_out_wb = tempfile.NamedTemporaryFile(delete=False, suffix="_TODOS_POR_HOJA.xlsx")
-            temp_out_wb_path = temp_out_wb.name
-            temp_out_wb.close()
-            generador.generar_workbook_por_profesional(temp_input_path, temp_out_wb_path, nombres)
-            with open(temp_out_wb_path, "rb") as f:
-                data_wb = f.read()
-            os.remove(temp_out_wb_path)
-        st.success("Workbook listo (una hoja por terapeuta)")
-        st.download_button(
-            label="📥 Descargar CUADRO_TODOS_POR_HOJA.xlsx",
-            data=data_wb,
-            file_name="CUADRO_TODOS_POR_HOJA.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_todos_por_hoja"
-        )
-
-except Exception as e:
-    st.error(f"❌ Error: {e}")
-
-finally:
-    # borrar el archivo subido temporal
+if uploaded_file:
     try:
-        if os.path.exists(temp_input_path):
-            os.remove(temp_input_path)
-    except:
-        pass
+        generator = CuadroFacturacionGenerator(uploaded_file)
+        generator.load_data()
+
+        st.success("✅ Archivo cargado correctamente")
+
+        if st.button("Generar Cuadros de Facturación"):
+            with st.spinner("Procesando archivos..."):
+                archivos_individuales = generator.generar_por_profesional()
+                archivo_consolidado = generator.generar_consolidado()
+
+            st.success("✅ Archivos generados")
+
+            # ZIP con todos los archivos individuales
+            zip_path = "output/Facturacion_Individual.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for archivo in archivos_individuales:
+                    zf.write(archivo, os.path.basename(archivo))
+
+            # Descarga de ZIP
+            with open(zip_path, "rb") as f:
+                st.download_button(
+                    "⬇️ Descargar archivos individuales (ZIP)",
+                    f,
+                    file_name="Facturacion_Individual.zip"
+                )
+
+            # Descarga de consolidado
+            with open(archivo_consolidado, "rb") as f:
+                st.download_button(
+                    "⬇️ Descargar consolidado",
+                    f,
+                    file_name="Consolidado_Facturacion.xlsx"
+                )
+
+    except Exception as e:
+        st.error(f"❌ Error: {e}")
