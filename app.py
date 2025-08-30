@@ -23,13 +23,13 @@ if uploaded_file:
 
             st.success("✅ Archivos generados")
 
-            # ZIP con todos los archivos individuales
+            # Crear ZIP con todos los individuales
             zip_path = "output/Facturacion_Individual.zip"
             with zipfile.ZipFile(zip_path, "w") as zf:
                 for archivo in archivos_individuales:
                     zf.write(archivo, os.path.basename(archivo))
 
-            # Descarga de ZIP
+            # Botón para descargar ZIP
             with open(zip_path, "rb") as f:
                 st.download_button(
                     "⬇️ Descargar archivos individuales (ZIP)",
@@ -37,7 +37,7 @@ if uploaded_file:
                     file_name="Facturacion_Individual.zip"
                 )
 
-            # Descarga de consolidado
+            # Botón para descargar consolidado
             with open(archivo_consolidado, "rb") as f:
                 st.download_button(
                     "⬇️ Descargar consolidado",
