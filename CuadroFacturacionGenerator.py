@@ -7,27 +7,27 @@ class CuadroFacturacionGenerator:
         self.df = None
 
     def load_data(self):
-        """Carga el archivo de Excel respetando encabezados y contenido original"""
+        """Carga el archivo respetando encabezados reales"""
         try:
-            self.df = pd.read_excel(self.file, header=0, dtype=str)  # Tomar fila 0 como encabezados
-            self.df = self.df.fillna("")  # Reemplazar NaN con vacío
+            # 👇 Importante: header=0 para tomar la primera fila como encabezados
+            # dtype=str para que no convierta a número y no aparezcan "1"
+            self.df = pd.read_excel(self.file, header=0, dtype=str)
+            self.df = self.df.fillna("")  # reemplaza NaN por vacío
         except Exception as e:
             raise Exception(f"Error al leer el archivo: {e}")
 
     def generar_por_profesional(self, output_dir="output"):
-        """Genera un archivo por cada profesional"""
+        """Genera un Excel por cada profesional"""
         if self.df is None:
             raise Exception("Primero debe cargar los datos con load_data()")
 
         os.makedirs(output_dir, exist_ok=True)
-
         archivos = []
-        profesionales = self.df["Nombre completo de profesional"].unique()
 
-        for profesional in profesionales:
+        for profesional in self.df["Nombre completo de profesional"].unique():
             df_pro = self.df[self.df["Nombre completo de profesional"] == profesional].copy()
 
-            # Mover columna "TIPO CONTRATO (OPS O NOMINA)" al final si existe
+            # mover columna "TIPO CONTRATO (OPS O NOMINA)" al final si existe
             if "TIPO CONTRATO (OPS O NOMINA)" in df_pro.columns:
                 cols = [c for c in df_pro.columns if c != "TIPO CONTRATO (OPS O NOMINA)"]
                 cols.append("TIPO CONTRATO (OPS O NOMINA)")
@@ -40,14 +40,13 @@ class CuadroFacturacionGenerator:
         return archivos
 
     def generar_consolidado(self, output_dir="output"):
-        """Genera un archivo consolidado con todos los registros"""
+        """Genera un Excel con todos los registros"""
         if self.df is None:
             raise Exception("Primero debe cargar los datos con load_data()")
 
         os.makedirs(output_dir, exist_ok=True)
         df = self.df.copy()
 
-        # Mover columna "TIPO CONTRATO (OPS O NOMINA)" al final si existe
         if "TIPO CONTRATO (OPS O NOMINA)" in df.columns:
             cols = [c for c in df.columns if c != "TIPO CONTRATO (OPS O NOMINA)"]
             cols.append("TIPO CONTRATO (OPS O NOMINA)")
