@@ -1,107 +1,56 @@
-import pandas as pd
-import unicodedata
-import re
-
-# ---------- Utilidades ----------
-def _norm(texto: str) -> str:
-    """Normaliza: sin tildes, minúsculas, sin signos, espacios colapsados."""
-    if texto is None:
-        return ""
-    s = unicodedata.normalize("NFKD", str(texto))
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = s.strip().lower()
-    s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"[^a-z0-9 ]+", "", s)
-    return s
-
-def _find_col(candidates, df_columns):
-    """Busca en columnas del DF la primera coincidencia normalizada con cualquiera de 'candidates'."""
-    norm_map = {_norm(col): col for col in df_columns}
-    # match exact normalizado
-    for cand in candidates:
-        n = _norm(cand)
-        if n in norm_map:
-            return norm_map[n]
-    # match parcial (por si hay sufijos/prefijos)
-    for cand in candidates:
-        n = _norm(cand)
-        for k, original in norm_map.items():
-            if n in k or k in n:
-                return original
-    return None
-
-def _open_conglomerado(input_path):
-    """Abre la hoja CONGLOMERADO; si no existe, abre la primera hoja."""
-    xls = pd.ExcelFile(input_path, engine="openpyxl")
-    sheet = "CONGLOMERADO" if "CONGLOMERADO" in xls.sheet_names else xls.sheet_names[0]
-    return pd.read_excel(xls, sheet_name=sheet, engine="openpyxl")
-
+# CuadroFacturacionGenerator.py
+import openpyxl
+from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 class CuadroFacturacionGenerator:
-    def __init__(self):
-        # Columnas deseadas en el Excel de salida (orden fijo)
-        self.columnas_salida_deseadas = [
-            "TIPO CONTRATO (OPS O NOMINA)",
-            "CC Profesional",
-            "Nombre completo de profesional",
-            "Area",
-            "Nombre completo de Usuario",
-            "Doc Usuario",
-            "No Autorización",
-            "SES AUTOR",
-            "Fecha Inicial",
-            "Fecha Final",
-            "NO de sesiones",
-            "AUTOR",
-            "GLOSAS",
-            "RECONOCE LA EMPRESA",
-            "Fechas de atención DIAS Y MESES",
-            "Valor",
-        ]
-        # Sinónimos para detectar la columna del profesional
-        self.candidatas_profesional = [
-            "NOMBRE DEL PROFESIONAL",
-            "Nombre completo de profesional",
-            "Nombre del profesional",
-            "Profesional",
-            "PROFESIONAL",
-            "Terapeuta",
-            "Nombre completo del profesional",
-        ]
+    def __init__(self, filename="Cuadro_Facturacion.xlsx"):
+        self.filename = filename
 
-    def generar_filtrado_por_profesional(self, input_path, output_path, lista_profesionales):
+    def generar(self, datos):
         """
-        Genera un Excel filtrado por uno o varios profesionales.
-        - Mantiene las columnas en el mismo orden que self.columnas_salida_deseadas,
-          usando las que existan en el archivo origen.
+        Genera un cuadro de facturación en Excel.
+
+        datos: lista de diccionarios con claves:
+            - 'item'
+            - 'descripcion'
+            - 'cantidad'
+            - 'valor_unitario'
         """
-        df = _open_conglomerado(input_path)
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Facturación"
 
-        # Detectar columna del profesional de forma robusta
-        col_prof = _find_col(self.candidatas_profesional, df.columns)
-        if not col_prof:
-            raise KeyError(
-                "No se encontró la columna del profesional. "
-                f"Columnas disponibles: {list(df.columns)}"
-            )
+        # Encabezados
+        headers = ["Item", "Descripción", "Cantidad", "Valor Unitario", "Subtotal"]
+        ws.append(headers)
 
-        # Filtrado
-        lista_limpia = [str(x).strip() for x in lista_profesionales if str(x).strip()]
-        df_filtrado = df[df[col_prof].astype(str).isin(lista_limpia)]
+        # Estilo encabezados
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col)
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal="center")
+            ws.column_dimensions[get_column_letter(col)].width = 20
 
-        # Mapear columnas de salida a las existentes (en el mismo orden)
-        columnas_existentes = []
-        for deseada in self.columnas_salida_deseadas:
-            encontrada = _find_col([deseada], df_filtrado.columns)
-            if encontrada:
-                columnas_existentes.append(encontrada)
+        # Insertar datos
+        for i, dato in enumerate(datos, start=2):
+            ws.cell(row=i, column=1, value=dato["item"])
+            ws.cell(row=i, column=2, value=dato["descripcion"])
+            ws.cell(row=i, column=3, value=dato["cantidad"])
+            ws.cell(row=i, column=4, value=dato["valor_unitario"])
+            ws.cell(row=i, column=5, value=dato["cantidad"] * dato["valor_unitario"])
 
-        # Si no se encontró ninguna de las deseadas, exportar tal cual filtrado
-        if not columnas_existentes:
-            columnas_existentes = list(df_filtrado.columns)
+        # Total
+        total_row = len(datos) + 2
+        ws.cell(row=total_row, column=4, value="TOTAL")
+        ws.cell(row=total_row, column=5, value=f"=SUM(E2:E{len(datos)+1})")
 
-        # Guardar resultado
-        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-            df_filtrado[columnas_existentes].to_excel(
-                writer, sheet_name="FACTURACION", index=False
-            )
+        # Bordes
+        thin = Side(border_style="thin", color="000000")
+        for row in ws.iter_rows(min_row=1, max_row=total_row, min_col=1, max_col=5):
+            for cell in row:
+                cell.border = Border(top=thin, bottom=thin, left=thin, right=thin)
+
+        # Guardar archivo
+        wb.save(self.filename)
+        return self.filename
