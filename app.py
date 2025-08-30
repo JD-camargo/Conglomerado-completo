@@ -7,7 +7,7 @@ st.set_page_config(page_title="Cuadro de Facturación", layout="wide")
 
 st.title("📊 Generador de Cuadro de Facturación")
 
-uploaded_file = st.file_uploader("Sube el archivo del conglomerado (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("📂 Sube el archivo del conglomerado (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
     try:
@@ -16,12 +16,12 @@ if uploaded_file:
 
         st.success("✅ Archivo cargado correctamente")
 
-        if st.button("Generar Cuadros de Facturación"):
+        if st.button("🚀 Generar Cuadros de Facturación"):
             with st.spinner("Procesando archivos..."):
                 archivos_individuales = generator.generar_por_profesional()
                 archivo_consolidado = generator.generar_consolidado()
 
-            st.success("✅ Archivos generados")
+            st.success("✅ Archivos generados con éxito")
 
             # Crear ZIP con todos los individuales
             zip_path = "output/Facturacion_Individual.zip"
@@ -29,7 +29,7 @@ if uploaded_file:
                 for archivo in archivos_individuales:
                     zf.write(archivo, os.path.basename(archivo))
 
-            # Botón para descargar ZIP
+            # Botón descarga ZIP
             with open(zip_path, "rb") as f:
                 st.download_button(
                     "⬇️ Descargar archivos individuales (ZIP)",
@@ -37,7 +37,7 @@ if uploaded_file:
                     file_name="Facturacion_Individual.zip"
                 )
 
-            # Botón para descargar consolidado
+            # Botón descarga consolidado
             with open(archivo_consolidado, "rb") as f:
                 st.download_button(
                     "⬇️ Descargar consolidado",
