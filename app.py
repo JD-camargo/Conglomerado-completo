@@ -1,18 +1,21 @@
 # app.py
 import streamlit as st
-import tempfile, os
+import tempfile
+import os
+import pandas as pd
 from CuadroFacturacionGenerator import CuadroFacturacionGenerator
 
-st.set_page_config(page_title="Generador de Cuadro de Facturación", layout="centered")
+st.set_page_config(page_title="Generador de Cuadro de Facturación - IPS", layout="centered")
 st.title("🧾 Generador de Cuadro de Facturación - IPS")
-st.markdown("Sube el Excel **CONGLOMERADO**, elige un profesional o descarga el cuadro de todas las profesionales.")
+st.markdown("Sube el Excel **CONGLOMERADO**, elige un profesional y descarga su cuadro o descarga el archivo con todas las profesionales.")
 
 uploaded_file = st.file_uploader("📤 Cargar archivo Excel (.xlsx)", type=["xlsx"])
+
 if not uploaded_file:
-    st.info("Sube el archivo del conglomerado para ver opciones.")
+    st.info("Sube el archivo del conglomerado (formato .xlsx).")
     st.stop()
 
-# Guardar temporalmente el archivo subido
+# guardar temporalmente el excel subido
 with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
     tmp.write(uploaded_file.read())
     temp_input_path = tmp.name
@@ -20,35 +23,33 @@ with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
 generador = CuadroFacturacionGenerator()
 
 try:
-    # Listar profesionales detectados
+    # Listar profesionales detectados y mostrar preview
     nombres, col_prof = generador.listar_profesionales(temp_input_path)
     st.caption(f"Columna detectada para profesional: **{col_prof}**")
-    st.dataframe  # placeholder
 
-    # Mostrar vista previa (primeras filas)
-    import pandas as pd
-    preview_df = pd.read_excel(temp_input_path, sheet_name="CONGLOMERADO", engine="openpyxl") if "CONGLOMERADO" in pd.ExcelFile(temp_input_path, engine="openpyxl").sheet_names else pd.read_excel(temp_input_path, engine="openpyxl")
-    st.subheader("Vista previa del archivo (primeras 8 filas)")
+    # Mostrar una vista previa de las primeras filas (detecta hoja CONGLOMERADO si existe)
+    xls = pd.ExcelFile(temp_input_path, engine="openpyxl")
+    sheet = "CONGLOMERADO" if "CONGLOMERADO" in xls.sheet_names else xls.sheet_names[0]
+    preview_df = pd.read_excel(xls, sheet_name=sheet, engine="openpyxl")
+    st.subheader("Vista previa (primeras 8 filas)")
     st.dataframe(preview_df.head(8))
 
-    # UI: selección individual y botones
+    # Selección de profesional
     nombre_seleccionado = st.selectbox("👤 Selecciona el profesional:", nombres)
 
     c1, c2, c3 = st.columns([1,1,1])
 
-    # Botón: generar/descargar individual
+    # Descargar individual
     if c1.button("📥 Descargar seleccionado"):
         with st.spinner("Generando archivo individual..."):
-            import tempfile, os
             temp_out = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{nombre_seleccionado.replace(' ', '_')}.xlsx")
             temp_out_path = temp_out.name
             temp_out.close()
             generador.generar_filtrado(temp_input_path, temp_out_path, [nombre_seleccionado])
-            # leer bytes y eliminar archivo temporal
             with open(temp_out_path, "rb") as f:
                 data = f.read()
             os.remove(temp_out_path)
-        st.success(f"Archivo listo: {nombre_seleccionado}")
+        st.success(f"Archivo individual listo: {nombre_seleccionado}")
         st.download_button(
             label=f"📥 Descargar {nombre_seleccionado}",
             data=data,
@@ -57,7 +58,7 @@ try:
             key=f"download_individual_{nombre_seleccionado}"
         )
 
-    # Botón: generar/descargar todo combinado (una hoja)
+    # Descargar todos combinados (una hoja)
     if c2.button("📥 Descargar TODOS (combinado)"):
         with st.spinner("Generando archivo combinado con todos los profesionales..."):
             temp_out_all = tempfile.NamedTemporaryFile(delete=False, suffix="_TODOS_COMBINADO.xlsx")
@@ -76,7 +77,7 @@ try:
             key="download_todos_combined"
         )
 
-    # Botón: generar workbook con hoja por profesional
+    # Descargar workbook con hoja por profesional
     if c3.button("📥 Descargar TODOS (por hojas)"):
         with st.spinner("Generando workbook por profesional (una hoja por terapeuta)..."):
             temp_out_wb = tempfile.NamedTemporaryFile(delete=False, suffix="_TODOS_POR_HOJA.xlsx")
