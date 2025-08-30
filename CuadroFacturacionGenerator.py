@@ -1,57 +1,94 @@
 import pandas as pd
-import os
+from collections import defaultdict
+from datetime import datetime
 
 class CuadroFacturacionGenerator:
-    def __init__(self, file):
-        self.file = file
-        self.df = None
 
-    def load_data(self):
-        """Carga el archivo respetando encabezados reales"""
-        try:
-            # 👇 Importante: header=0 para tomar la primera fila como encabezados
-            # dtype=str para que no convierta a número y no aparezcan "1"
-            self.df = pd.read_excel(self.file, header=0, dtype=str)
-            self.df = self.df.fillna("")  # reemplaza NaN por vacío
-        except Exception as e:
-            raise Exception(f"Error al leer el archivo: {e}")
+    def _formatear_fechas(self, fechas):
+        fechas_ordenadas = sorted(fechas, key=lambda x: datetime.strptime(x, "%Y-%m-%d"))
+        fechas_dict = defaultdict(list)
 
-    def generar_por_profesional(self, output_dir="output"):
-        """Genera un Excel por cada profesional"""
-        if self.df is None:
-            raise Exception("Primero debe cargar los datos con load_data()")
+        meses_es = {
+            "January": "enero", "February": "febrero", "March": "marzo",
+            "April": "abril", "May": "mayo", "June": "junio",
+            "July": "julio", "August": "agosto", "September": "septiembre",
+            "October": "octubre", "November": "noviembre", "December": "diciembre"
+        }
 
-        os.makedirs(output_dir, exist_ok=True)
-        archivos = []
+        for fecha in fechas_ordenadas:
+            dt = datetime.strptime(fecha, "%Y-%m-%d")
+            mes = dt.strftime("%B")
+            dia = str(dt.day)
+            fechas_dict[mes].append(dia)
 
-        for profesional in self.df["Nombre completo de profesional"].unique():
-            df_pro = self.df[self.df["Nombre completo de profesional"] == profesional].copy()
+        fechas_formateadas = []
+        for mes, dias in fechas_dict.items():
+            mes_es = meses_es.get(mes, mes)
+            fechas_formateadas.append(f"{', '.join(dias)} {mes_es}")
 
-            # mover columna "TIPO CONTRATO (OPS O NOMINA)" al final si existe
-            if "TIPO CONTRATO (OPS O NOMINA)" in df_pro.columns:
-                cols = [c for c in df_pro.columns if c != "TIPO CONTRATO (OPS O NOMINA)"]
-                cols.append("TIPO CONTRATO (OPS O NOMINA)")
-                df_pro = df_pro[cols]
+        return ", ".join(fechas_formateadas)
 
-            filename = os.path.join(output_dir, f"{profesional}.xlsx")
-            df_pro.to_excel(filename, index=False)
-            archivos.append(filename)
 
-        return archivos
+    def _procesar_dataframe(self, df):
+        df_filtered = df[[
+            "DOC PROFESIONAL", "NOMBRE DEL PROFESIONAL", "Tipo de nota",
+            "Documento", "NOMBRE USUARIO", "FECHA INI AUT", "FECHA FINAL", "AUT", "FECHA ATENCION"
+        ]]
 
-    def generar_consolidado(self, output_dir="output"):
-        """Genera un Excel con todos los registros"""
-        if self.df is None:
-            raise Exception("Primero debe cargar los datos con load_data()")
+        sesiones_dict = defaultdict(lambda: {"count": 0, "fechas": []})
 
-        os.makedirs(output_dir, exist_ok=True)
-        df = self.df.copy()
+        for _, row in df_filtered.iterrows():
+            clave = (
+                row["DOC PROFESIONAL"], row["NOMBRE DEL PROFESIONAL"], row["Tipo de nota"],
+                row["Documento"], row["NOMBRE USUARIO"], row["AUT"], row["FECHA INI AUT"],
+                row["FECHA FINAL"]
+            )
+            sesiones_dict[clave]["count"] += 1
+            sesiones_dict[clave]["fechas"].append(row["FECHA ATENCION"].date().isoformat())
 
-        if "TIPO CONTRATO (OPS O NOMINA)" in df.columns:
-            cols = [c for c in df.columns if c != "TIPO CONTRATO (OPS O NOMINA)"]
-            cols.append("TIPO CONTRATO (OPS O NOMINA)")
-            df = df[cols]
+        datos_expandidos = []
+        for clave, valores in sesiones_dict.items():
+            doc_profesional, nombre_profesional, tipo_nota, documento, nombre_usuario, autorizacion, fecha_ini_aut, fecha_final = clave
+            fechas_atencion = self._formatear_fechas(valores["fechas"])
 
-        filename = os.path.join(output_dir, "Consolidado_Facturacion.xlsx")
-        df.to_excel(filename, index=False)
-        return filename
+            fila = [
+                doc_profesional, nombre_profesional, tipo_nota,
+                nombre_usuario, documento,
+                autorizacion, fecha_ini_aut, fecha_final,
+                valores["count"], fechas_atencion
+            ]
+            datos_expandidos.append(fila)
+
+        df_grouped = pd.DataFrame(datos_expandidos, columns=[
+            "CC Profesional", "Nombre completo de profesional", "Area",
+            "Nombre completo de Usuario", "Doc Usuario", "No Autorización",
+            "Fecha Inicial", "Fecha Final", "NO de sesiones",
+            "Fechas de atención DIAS Y MESES"
+        ])
+
+        # columnas extra
+        df_grouped.insert(7, "SES AUTOR", "")
+        df_grouped.insert(11, "AUTOR", "")
+        df_grouped.insert(12, "GLOSAS", "")
+        df_grouped.insert(13, "RECONOCE LA EMPRESA", "")
+        df_grouped["Valor"] = df_grouped["NO de sesiones"] * 4500
+        df_grouped["TIPO CONTRATO (OPS O NOMINA)"] = "Nómina"
+
+        return df_grouped
+
+
+    def generar_filtrado_por_profesional(self, conglomerado_path, output_path, nombre_profesional):
+        df = pd.read_excel(conglomerado_path, sheet_name="CONGLOMERADO", engine="openpyxl")
+        df = df[df["NOMBRE DEL PROFESIONAL"] == nombre_profesional]
+
+        if df.empty:
+            raise ValueError(f"No se encontraron registros para el profesional: {nombre_profesional}")
+
+        df_grouped = self._procesar_dataframe(df)
+        df_grouped.to_excel(output_path, sheet_name="CUADRO SESIONES REALIZADAS", index=False, engine="openpyxl")
+
+
+    def generar_todos(self, conglomerado_path, output_path):
+        df = pd.read_excel(conglomerado_path, sheet_name="CONGLOMERADO", engine="openpyxl")
+        df_grouped = self._procesar_dataframe(df)
+        df_grouped.to_excel(output_path, sheet_name="CUADRO SESIONES REALIZADAS", index=False, engine="openpyxl")
